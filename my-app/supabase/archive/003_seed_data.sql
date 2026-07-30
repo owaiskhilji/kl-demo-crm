@@ -1,0 +1,2 @@
+-- Seed data will be fully populated in Milestone 4.8.
+-- Currently a placeholder.
