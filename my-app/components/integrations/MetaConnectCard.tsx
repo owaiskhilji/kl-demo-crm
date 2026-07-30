@@ -43,6 +43,12 @@ export function MetaConnectCard({ channel, title, description, connection }: any
                 <span className="font-mono text-zinc-700 dark:text-zinc-300">{connection.page_id}</span>
               </div>
             )}
+            {connection.phone_number_id && (
+              <div className="text-sm flex flex-col mt-3">
+                <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Phone Number ID</span>
+                <span className="font-mono text-zinc-700 dark:text-zinc-300">{connection.phone_number_id}</span>
+              </div>
+            )}
             
             <div className="text-sm flex flex-col mt-3">
               <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-1">Status</span>

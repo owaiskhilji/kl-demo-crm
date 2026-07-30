@@ -6,71 +6,78 @@ import { decrypt } from "@/lib/utils/encryption";
 import { z } from "zod";
 
 /**
- * Reads the WhatsApp access token from integration_connections (preferred, encrypted at rest)
- * with a fallback to the WHATSAPP_ACCESS_TOKEN env var for local dev / bootstrap.
+ * Reads the WhatsApp access token.
  *
- * This is the SAME pattern used by the inbound webhook (app/api/webhooks/whatsapp/route.ts).
- * Both inbound and outbound paths must read from the same source so that when
- * tokenRefresh.ts updates the DB token, outbound messages immediately pick it up.
+ * Strategy (in order):
+ *   1. DB (integration_connections) — encrypted at rest, preferred for OAuth-connected setups.
+ *   2. Environment variable (WHATSAPP_ACCESS_TOKEN) — valid for WhatsApp Cloud API because
+ *      WhatsApp uses long-lived System User Tokens (not short-lived Page Tokens like Facebook).
+ *      This is NOT a "dev-only fallback" — it is a legitimate production source for WhatsApp.
+ *
+ * This is fundamentally different from Facebook/Instagram where tokens come exclusively from
+ * OAuth and must live in the DB. WhatsApp Cloud API tokens are generated in Meta Business
+ * Manager and are permanent until manually revoked.
  */
 async function getWhatsAppToken(): Promise<string | null> {
+  // 1. Try DB first (integration_connections)
   try {
     const supabase = createAdminClient();
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("integration_connections")
       .select("access_token")
       .eq("channel", "whatsapp")
       .eq("status", "active")
       .single();
 
-    if (error) {
-      console.error("[WhatsApp Outbound] Error fetching token from DB:", error);
-    } else if (data?.access_token) {
+    if (data?.access_token) {
       return decrypt(data.access_token);
     }
-  } catch (err) {
-    console.error("[WhatsApp Outbound] Unexpected error fetching token from DB:", err);
+  } catch {
+    // No active DB row — this is expected when using env-var-based setup
   }
 
-  if (process.env.NODE_ENV === "production") {
-    console.error("[WhatsApp Outbound] FATAL: No active DB token found for WhatsApp in production. Refusing to fall back to env var.");
-    return null;
+  // 2. Fall back to env var (legitimate for WhatsApp System User Tokens)
+  const envToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (envToken) {
+    console.info("[WhatsApp Outbound] Using WHATSAPP_ACCESS_TOKEN from environment.");
+    return envToken;
   }
 
-  console.warn("[WhatsApp Outbound] WARNING: No DB token found, falling back to WHATSAPP_ACCESS_TOKEN env var — this should not happen in production.");
-  return process.env.WHATSAPP_ACCESS_TOKEN || null;
+  console.error("[WhatsApp Outbound] FATAL: No token found in DB or environment variables.");
+  return null;
 }
 
 /**
- * Reads the WhatsApp phone_number_id from integration_connections,
- * falling back to WHATSAPP_PHONE_NUMBER_ID env var.
+ * Reads the WhatsApp phone_number_id.
+ * Same strategy as token: DB first, env var fallback.
  */
 async function getWhatsAppPhoneNumberId(): Promise<string | null> {
+  // 1. Try DB first
   try {
     const supabase = createAdminClient();
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("integration_connections")
       .select("phone_number_id")
       .eq("channel", "whatsapp")
       .eq("status", "active")
       .single();
 
-    if (error) {
-      console.error("[WhatsApp Outbound] Error fetching phone_number_id from DB:", error);
-    } else if (data?.phone_number_id) {
+    if (data?.phone_number_id) {
       return data.phone_number_id;
     }
-  } catch (err) {
-    console.error("[WhatsApp Outbound] Unexpected error fetching phone_number_id from DB:", err);
+  } catch {
+    // No active DB row
   }
 
-  if (process.env.NODE_ENV === "production") {
-    console.error("[WhatsApp Outbound] FATAL: No active DB phone_number_id found in production. Refusing to fall back to env var.");
-    return null;
+  // 2. Fall back to env var
+  const envId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  if (envId) {
+    console.info("[WhatsApp Outbound] Using WHATSAPP_PHONE_NUMBER_ID from environment.");
+    return envId;
   }
 
-  console.warn("[WhatsApp Outbound] WARNING: No DB phone_number_id found, falling back to env var — this should not happen in production.");
-  return process.env.WHATSAPP_PHONE_NUMBER_ID || null;
+  console.error("[WhatsApp Outbound] FATAL: No phone_number_id found in DB or environment variables.");
+  return null;
 }
 
 const sendWhatsAppMessageSchema = z.object({
@@ -130,12 +137,12 @@ export async function sendWhatsAppMessage(input: z.infer<typeof sendWhatsAppMess
       return { success: false, error: "24-hour window expired. Use an approved template." };
     }
 
-    // 3. Get token from integration_connections (same source as inbound webhook)
+    // 3. Get token and phone number ID (DB-first, env-var fallback)
     const token = await getWhatsAppToken();
     const phoneNumberId = await getWhatsAppPhoneNumberId();
 
     if (!phoneNumberId || !token) {
-      return { success: false, error: "WhatsApp integration not configured" };
+      return { success: false, error: "WhatsApp integration not configured. Contact admin." };
     }
 
     // 4. Send WhatsApp Message (Cloud API POST — free-form text, only within 24h window)
@@ -159,7 +166,7 @@ export async function sendWhatsAppMessage(input: z.infer<typeof sendWhatsAppMess
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      console.error("WhatsApp API Error:", errorData);
+      console.error("[WhatsApp Outbound] API Error:", errorData);
       return { success: false, error: "Failed to send message via WhatsApp" };
     }
 
@@ -175,14 +182,14 @@ export async function sendWhatsAppMessage(input: z.infer<typeof sendWhatsAppMess
       });
 
     if (logError) {
-      console.error("Failed to log message:", logError);
+      console.error("[WhatsApp Outbound] Failed to log message:", logError);
       return { success: false, error: "Message sent, but failed to log in CRM" };
     }
 
     return { success: true };
 
   } catch (error) {
-    console.error("Unexpected error in sendWhatsAppMessage:", error);
+    console.error("[WhatsApp Outbound] Unexpected error:", error);
     return { success: false, error: "An unexpected error occurred" };
   }
 }

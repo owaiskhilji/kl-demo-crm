@@ -95,6 +95,10 @@ export async function getMetaOAuthUrl(channel: string) {
   } else if (channel === "instagram") {
     // Both are required by Meta to read Instagram DMs via the connected Facebook Page
     scope += ",instagram_basic,instagram_manage_messages";
+  } else if (channel === "whatsapp") {
+    // WhatsApp Cloud API: needs business_management to discover WABAs,
+    // and whatsapp_business_management + whatsapp_business_messaging to send/receive.
+    scope += ",business_management,whatsapp_business_management,whatsapp_business_messaging";
   }
   
   return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&state=${state}&scope=${scope}&auth_type=rerequest`;

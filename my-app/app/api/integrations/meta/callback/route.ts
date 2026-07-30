@@ -117,23 +117,86 @@ export async function GET(request: NextRequest) {
 
     const channelResolved = channel || "facebook";
 
+    // 4b. WhatsApp-specific: fetch phone_number_id from the WABA
+    //     WhatsApp Cloud API needs phone_number_id (not page_id) to send messages.
+    //     We walk: user token → /me/businesses → /{biz_id}/phone_numbers to find it.
+    let wabaId: string | null = null;
+    let phoneNumberId: string | null = null;
+
+    if (channelResolved === "whatsapp") {
+      try {
+        // Try fetching WABA IDs linked to the user's businesses
+        const bizUrl = `https://graph.facebook.com/v21.0/me/businesses?access_token=${longLivedData.access_token}`;
+        const bizRes = await fetch(bizUrl);
+        const bizData = await bizRes.json();
+        console.log("[WhatsApp Callback] Businesses:", JSON.stringify(bizData.data?.map((b: any) => b.id)));
+
+        for (const biz of bizData.data || []) {
+          const wabaUrl = `https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts?access_token=${longLivedData.access_token}`;
+          const wabaRes = await fetch(wabaUrl);
+          const wabaData = await wabaRes.json();
+
+          if (wabaData.data?.[0]) {
+            wabaId = wabaData.data[0].id;
+            // Now get phone numbers from this WABA
+            const phonesUrl = `https://graph.facebook.com/v21.0/${wabaId}/phone_numbers?access_token=${longLivedData.access_token}`;
+            const phonesRes = await fetch(phonesUrl);
+            const phonesData = await phonesRes.json();
+            console.log("[WhatsApp Callback] Phone Numbers:", JSON.stringify(phonesData.data));
+
+            if (phonesData.data?.[0]) {
+              phoneNumberId = phonesData.data[0].id;
+            }
+            break;
+          }
+        }
+      } catch (waErr) {
+        console.warn("[WhatsApp Callback] Could not auto-detect phone_number_id:", waErr);
+      }
+
+      // Fallback: use env vars if Graph API walk didn't find them
+      if (!phoneNumberId) {
+        phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || null;
+        console.info("[WhatsApp Callback] Using WHATSAPP_PHONE_NUMBER_ID from env:", phoneNumberId);
+      }
+      if (!wabaId) {
+        wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || null;
+      }
+    }
+
     // 5. Upsert the connection record using the admin client (since this table has no client-facing INSERT policy)
     const adminSupabase = createAdminClient();
-    const { data: existing } = await adminSupabase
-      .from("integration_connections")
-      .select("id")
-      .eq("channel", channelResolved)
-      .eq("page_id", pageId)
-      .single();
+
+    // For WhatsApp, match on channel + phone_number_id (not page_id)
+    // For Facebook/Instagram, match on channel + page_id
+    const matchField = channelResolved === "whatsapp" ? "phone_number_id" : "page_id";
+    const matchValue = channelResolved === "whatsapp" ? phoneNumberId : pageId;
+
+    const { data: existing } = matchValue
+      ? await adminSupabase
+          .from("integration_connections")
+          .select("id")
+          .eq("channel", channelResolved)
+          .eq(matchField, matchValue)
+          .single()
+      : { data: null };
+
+    const connectionPayload = {
+      channel: channelResolved,
+      page_id: channelResolved === "whatsapp" ? null : pageId,
+      phone_number_id: phoneNumberId,
+      waba_id: wabaId,
+      access_token: encryptedToken,
+      token_expires_at: expiresAt,
+      status: "active",
+      connected_by: user.id,
+    };
 
     if (existing) {
       const { error: updateError } = await adminSupabase
         .from("integration_connections")
         .update({
-          access_token: encryptedToken,
-          token_expires_at: expiresAt,
-          status: "active",
-          connected_by: user.id,
+          ...connectionPayload,
           updated_at: new Date().toISOString()
         })
         .eq("id", existing.id);
@@ -142,14 +205,7 @@ export async function GET(request: NextRequest) {
     } else {
       const { error: insertError } = await adminSupabase
         .from("integration_connections")
-        .insert({
-          channel: channelResolved,
-          page_id: pageId,
-          access_token: encryptedToken,
-          token_expires_at: expiresAt,
-          status: "active",
-          connected_by: user.id
-        });
+        .insert(connectionPayload);
       
       if (insertError) throw insertError;
     }
