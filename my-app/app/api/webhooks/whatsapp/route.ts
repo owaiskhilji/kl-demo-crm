@@ -2,39 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/meta/verifyWebhookSignature";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getLeastLoadedAgent } from "@/lib/utils/leadAssignment";
-import { decrypt } from "@/lib/utils/encryption";
 
-/**
- * Reads the WhatsApp access token from integration_connections (preferred, encrypted at rest)
- * with a fallback to the WHATSAPP_ACCESS_TOKEN env var for local dev / bootstrap.
- */
-async function getWhatsAppToken(): Promise<string | null> {
-  try {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase
-      .from("integration_connections")
-      .select("access_token")
-      .eq("channel", "whatsapp")
-      .eq("status", "active")
-      .single();
-
-    if (error) {
-      console.error("[WhatsApp Webhook] Error fetching token from DB:", error);
-    } else if (data?.access_token) {
-      return decrypt(data.access_token);
-    }
-  } catch (err) {
-    console.error("[WhatsApp Webhook] Unexpected error fetching token from DB:", err);
-  }
-
-  if (process.env.NODE_ENV === "production") {
-    console.error("[WhatsApp Webhook] FATAL: No active DB token found for WhatsApp in production. Refusing to fall back to env var.");
-    return null;
-  }
-
-  console.warn("[WhatsApp Webhook] WARNING: No DB token found, falling back to env var — this should not happen in production.");
-  return process.env.WHATSAPP_ACCESS_TOKEN || null;
-}
 
 // 1. GET: Verify Token Handshake (Hub Challenge)
 export async function GET(request: NextRequest) {

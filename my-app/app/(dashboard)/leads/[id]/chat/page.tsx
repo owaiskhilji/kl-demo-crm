@@ -6,7 +6,8 @@ export const metadata = {
   title: "Lead Chat | KL Demo CRM",
 };
 
-export default async function LeadChatPage({ params }: { params: { id: string } }) {
+export default async function LeadChatPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const supabase = await createClient();
   const { data: authData } = await supabase.auth.getClaims();
 
@@ -18,11 +19,11 @@ export default async function LeadChatPage({ params }: { params: { id: string } 
   const { data: lead, error: leadError } = await supabase
     .from("leads")
     .select("id, name, source")
-    .eq("id", params.id)
+    .eq("id", id)
     .single();
 
   if (leadError || !lead) {
-    redirect("/dashboard/leads");
+    redirect("/leads");
   }
 
   // Only allow chat for whatsapp/instagram/facebook sources
@@ -41,7 +42,7 @@ export default async function LeadChatPage({ params }: { params: { id: string } 
   const { data: initialMessages, error: messagesError } = await supabase
     .from("message_log")
     .select("*")
-    .eq("lead_id", params.id)
+    .eq("lead_id", id)
     .order("created_at", { ascending: true });
 
   return (
@@ -51,7 +52,7 @@ export default async function LeadChatPage({ params }: { params: { id: string } 
         <p className="text-sm text-zinc-500 capitalize">{lead.source} Integration</p>
       </div>
       <ChatInterface 
-        leadId={params.id} 
+        leadId={id} 
         leadSource={lead.source}
         initialMessages={initialMessages || []} 
       />

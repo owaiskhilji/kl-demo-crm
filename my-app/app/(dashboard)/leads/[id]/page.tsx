@@ -96,7 +96,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         <div className="flex items-center gap-2">
           {["whatsapp", "facebook", "instagram"].includes(lead.source || "") && (
             <Link 
-              href={`/dashboard/leads/${lead.id}/chat`}
+              href={`/leads/${lead.id}/chat`}
               className={cn(buttonVariants({ variant: "default" }), "gap-2")}
             >
               <MessageSquare className="h-4 w-4" />
