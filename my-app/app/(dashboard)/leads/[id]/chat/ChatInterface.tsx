@@ -57,7 +57,9 @@ export default function ChatInterface({ leadId, leadSource, initialMessages }: C
         (payload) => {
           const newMessage = payload.new as MessageLog;
           setMessages((prev) => {
-            // Avoid duplicates in case of optimistic updates or rapid firing
+            // Because the client generates the exact UUID and passes it to the DB insert,
+            // the Realtime broadcast will have the EXACT same ID as our optimistic temp message.
+            // A simple ID check handles deduplication perfectly, with no risk of content collisions.
             if (prev.some(m => m.id === newMessage.id)) return prev;
             return [...prev, newMessage];
           });
@@ -78,7 +80,8 @@ export default function ChatInterface({ leadId, leadSource, initialMessages }: C
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim() || isSending) return;
+    const contentToSend = inputValue.trim();
+    if (!contentToSend || isSending) return;
 
     if (!isWithin24hWindow) {
       setError("Cannot send free-form text outside 24-hour window.");
@@ -87,15 +90,34 @@ export default function ChatInterface({ leadId, leadSource, initialMessages }: C
 
     setIsSending(true);
     setError(null);
+    setInputValue(""); // Optimistically clear input
+
+    // Generate a real UUID on the client to use as the database primary key
+    const messageId = crypto.randomUUID();
+
+    // Optimistically add to UI immediately using the exact UUID
+    const optimisticMessage: MessageLog = {
+      id: messageId,
+      lead_id: leadId,
+      channel: leadSource,
+      direction: "outbound",
+      message_type: "text",
+      content: contentToSend,
+      created_at: new Date().toISOString(),
+    };
+    
+    setMessages((prev) => [...prev, optimisticMessage]);
 
     const result = await sendWhatsAppMessage({
       leadId,
-      content: inputValue,
+      content: contentToSend,
+      messageId, // Pass the ID so the server action uses it in the DB insert
     });
 
-    if (result.success) {
-      setInputValue("");
-    } else {
+    if (!result.success) {
+      // Revert optimistic updates on failure
+      setMessages((prev) => prev.filter(m => m.id !== messageId));
+      setInputValue(contentToSend);
       setError(result.error || "Failed to send message");
     }
 

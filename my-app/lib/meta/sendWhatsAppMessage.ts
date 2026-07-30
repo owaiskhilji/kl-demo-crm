@@ -83,6 +83,7 @@ async function getWhatsAppPhoneNumberId(): Promise<string | null> {
 const sendWhatsAppMessageSchema = z.object({
   leadId: z.string().uuid(),
   content: z.string().min(1, "Message content cannot be empty"),
+  messageId: z.string().uuid().optional(),
 });
 
 export async function sendWhatsAppMessage(input: z.infer<typeof sendWhatsAppMessageSchema>) {
@@ -90,7 +91,7 @@ export async function sendWhatsAppMessage(input: z.infer<typeof sendWhatsAppMess
   if (!result.success) {
     return { success: false, error: "Invalid input" };
   }
-  const { leadId, content } = result.data;
+  const { leadId, content, messageId } = result.data;
 
   try {
     const supabase = await createClient();
@@ -174,6 +175,7 @@ export async function sendWhatsAppMessage(input: z.infer<typeof sendWhatsAppMess
     const { error: logError } = await supabase
       .from("message_log")
       .insert({
+        ...(messageId ? { id: messageId } : {}),
         lead_id: leadId,
         channel: "whatsapp",
         direction: "outbound",
