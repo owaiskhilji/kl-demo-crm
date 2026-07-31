@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { LeadTable } from "@/components/leads/LeadTable";
+import { LeadsRealtime } from "@/components/leads/LeadsRealtime";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import Link from "next/link";
@@ -61,6 +62,7 @@ export default async function LeadsPage() {
 
   return (
     <div className="space-y-6 pb-12">
+      <LeadsRealtime />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">Leads</h1>
