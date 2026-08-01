@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { sendWhatsAppMessage } from "@/lib/meta/sendWhatsAppMessage";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,9 @@ export default function ChatInterface({ leadId, leadSource, initialMessages }: C
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  const supabase = createClient();
+  // CRITICAL: useMemo ensures we don't create a new Supabase client (and drop 
+  // the websocket connection) on every single keystroke when inputValue changes!
+  const supabase = useMemo(() => createClient(), []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
