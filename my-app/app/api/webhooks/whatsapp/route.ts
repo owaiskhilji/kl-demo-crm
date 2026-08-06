@@ -24,21 +24,20 @@ export async function GET(request: NextRequest) {
 // 2. POST: Receive Messages and Status Updates
 export async function POST(request: NextRequest) {
   try {
-    // A. Security Check - Read raw body and verify signature
-    // We must read the raw text for HMAC validation. Don't use request.json() here.
     const rawBody = await request.text();
+    console.log("[WhatsApp Webhook] 🚨 RAW PAYLOAD RECEIVED:", rawBody);
+
     const signature = request.headers.get("x-hub-signature-256");
+    console.log("[WhatsApp Webhook] Signature header:", signature);
 
     if (!verifyWebhookSignature(rawBody, signature)) {
-      console.warn("[WhatsApp Webhook] Invalid or missing X-Hub-Signature-256");
-      // Reject unverified payloads with 401 per security rules
+      console.warn("[WhatsApp Webhook] ❌ Invalid or missing X-Hub-Signature-256");
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
-    // B. Parse the verified payload
     const body = JSON.parse(rawBody);
+    console.log("[WhatsApp Webhook] ✅ Signature verified. Object type:", body.object);
 
-    // C. Process the payload (Meta's actual nested shape)
     if (body.object === "whatsapp_business_account") {
       for (const entry of body.entry || []) {
         for (const change of entry.changes || []) {

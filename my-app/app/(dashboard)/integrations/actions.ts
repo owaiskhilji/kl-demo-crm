@@ -68,7 +68,7 @@ export async function getMetaOAuthUrl(channel: string) {
   const appId = process.env.META_APP_ID;
   if (!appId) throw new Error("META_APP_ID is not configured in .env.local");
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL;
   const redirectUri = `${baseUrl}/api/integrations/meta/callback`;
   
   // Generate CSRF state token and store in HttpOnly cookie
@@ -87,17 +87,10 @@ export async function getMetaOAuthUrl(channel: string) {
   let scope = "pages_show_list";
   
   if (channel === "facebook") {
-    // Required for Facebook + Instagram Lead Ads (IG lead ads route through the connected Page).
-    // business_management is CRITICAL: /me/accounts silently omits Pages that are managed
-    // through a Business Manager/Portfolio unless this scope is granted.
-    // See: developers.facebook.com/docs/graph-api/reference/user/accounts/#limitations
     scope += ",leads_retrieval,pages_manage_ads,pages_manage_metadata,pages_read_engagement,ads_management,business_management";
   } else if (channel === "instagram") {
-    // Both are required by Meta to read Instagram DMs via the connected Facebook Page
     scope += ",instagram_basic,instagram_manage_messages";
   } else if (channel === "whatsapp") {
-    // WhatsApp Cloud API: needs business_management to discover WABAs,
-    // and whatsapp_business_management + whatsapp_business_messaging to send/receive.
     scope += ",business_management,whatsapp_business_management,whatsapp_business_messaging";
   }
   
